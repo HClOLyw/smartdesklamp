@@ -1,3 +1,10 @@
 build
 mx.scratch
 !.settings
+
+# CMake/IDE generated outputs
+compile_commands.json
+.cache/
+
+# Keil MDK project files and generated outputs
+MDK-ARM/
