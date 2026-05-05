@@ -21,7 +21,7 @@ void SystemClock_Config(void);
  */
 static uint8_t Power_State = 1;
 static uint8_t Auto_Mode = 1;
-static uint16_t Target_Brightness = 120;
+static uint16_t Target_Brightness = 50;
 static uint16_t Current_PWM = 0;
 static uint16_t Ambient_Lux = 0;
 static uint16_t PIR_Timeout = 600;
@@ -29,6 +29,7 @@ static uint16_t PIR_Count = 0;
 
 #define TARGET_LUX 500U
 #define DEADBAND 30U
+#define DEFAULT_START_BRIGHTNESS 50U
 
 static uint16_t Gamma_Table[200];
 
@@ -203,7 +204,7 @@ int main(void)
         }
         else if (Target_Brightness == 0)
         {
-          Target_Brightness = 100;
+          Target_Brightness = DEFAULT_START_BRIGHTNESS;
         }
       }
       else if (k == KEY_EVENT_LONG)
@@ -247,7 +248,7 @@ int main(void)
         if (!Power_State)
         {
           Power_State = 1;
-          if (Target_Brightness == 0) Target_Brightness = 100;
+          if (Target_Brightness == 0) Target_Brightness = DEFAULT_START_BRIGHTNESS;
         }
       }
       else
