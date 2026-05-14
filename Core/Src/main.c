@@ -33,7 +33,7 @@ static uint16_t PIR_Count = 0;
 
 static uint16_t Gamma_Table[200];
 
-/* 预先生成一张“伽马近似表”：
+/* 预先生成一张伽马近似表：
  * 用户看到的亮度感受并不是线性的，因此这里把 0~199 的亮度等级
  * 映射到 0~1000 的 PWM 比较值，让低亮度区域变化更柔和，不会显得突兀。
  */
@@ -56,9 +56,7 @@ static void Clamp_Values(void)
 }
 
 /* OLED 静态界面只绘制一次：
- * 左侧中文标签和冒号属于固定内容，不需要反复整屏刷新，
- * 这样可以减少 I2C 通信量并明显减轻闪屏。
- */
+*/
 static void OLED_DrawStaticUI(void)
 {
   static const uint8_t *label_mode[] = {hz_mo, hz_shi};
@@ -83,8 +81,7 @@ static void OLED_DrawStaticUI(void)
 
 /* 以固定宽度输出 ASCII 字段：
  * 通过左对齐并用空格补满整段宽度，达到“直接覆盖旧内容”的效果，
- * 这样就不需要先清空该区域，能进一步减轻刷新闪烁。
- */
+*/
 static void OLED_ShowField(uint8_t x, uint8_t page, uint8_t width, const char *text)
 {
   char buf[24];
@@ -124,7 +121,6 @@ static void OLED_UpdateDynamicUI(void)
     OLED_ShowField(80, 2, 8, field);
     last_ambient_lux = Ambient_Lux;
   }
-
   /* 调光级数字段固定输出 3 位数字。 */
   if (last_current_pwm != Current_PWM)
   {
@@ -132,7 +128,6 @@ static void OLED_UpdateDynamicUI(void)
     OLED_ShowField(80, 4, 4, field);
     last_current_pwm = Current_PWM;
   }
-
   /* 人体状态只有在“有/无”切换时才重绘。 */
   if (last_human_state != human_state)
   {
@@ -140,7 +135,6 @@ static void OLED_UpdateDynamicUI(void)
     last_human_state = human_state;
   }
 }
-
 int main(void)
 {
   /* HAL 库初始化，包含 SysTick、NVIC 优先级组等基础环境配置。 */
@@ -169,11 +163,7 @@ int main(void)
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
-  /* 软件定时调度标记：
-   * t10  ：10ms 周期任务
-   * t100 ：100ms 周期任务
-   * t200 ：200ms 周期任务
-   * t500 ：500ms 周期任务
+  /* 软件定时调度
    */
   uint32_t t10 = 0, t100 = 0, t200 = 0, t500 = 0;
 
@@ -181,10 +171,7 @@ int main(void)
   {
     uint32_t now = HAL_GetTick();
 
-    /* 10ms 任务：
-     * 1. 扫描按键
-     * 2. 处理编码器旋转
-     * 3. 按渐变方式更新实际亮度，避免瞬间跳变
+    /* 10ms 任务
      */
     if ((now - t10) >= 10)
     {
@@ -237,7 +224,6 @@ int main(void)
     if ((now - t100) >= 100)
     {
       t100 = now;
-
       /* 检测到人体时：
        * 1. 清零无人计时
        * 2. 如果当前熄灯，则自动唤醒
@@ -262,28 +248,30 @@ int main(void)
         }
       }
     }
-
     /* 200ms 任务：
-     * 读取光照传感器值，并在自动模式下做简易闭环调光。
+     * 读取光照传感器值，并在自动模式下做调光。
      */
     if ((now - t200) >= 200)
     {
       t200 = now;
       Ambient_Lux = BH1750_ReadLux_Filtered();
-
       if (Power_State && Auto_Mode)
       {
-        if (Ambient_Lux < (TARGET_LUX - DEADBAND))
+        /* 单边死区控制：
+         * - 低于 500lx 时继续升亮
+         * - 500~530lx 之间保持当前亮度不变
+         * - 高于 530lx 时开始降亮
+         */
+        if (Ambient_Lux < TARGET_LUX)
         {
           if (Target_Brightness < 199) Target_Brightness++;
         }
-        else if (Ambient_Lux > (TARGET_LUX + DEADBAND))
+        else if (Ambient_Lux > (TARGET_LUX + UPPER_DEADBAND))
         {
           if (Target_Brightness > 0) Target_Brightness--;
         }
       }
     }
-
     /* 500ms 任务：刷新 OLED 的动态数据区域。 */
     if ((now - t500) >= 500)
     {
@@ -292,6 +280,7 @@ int main(void)
     }
   }
 }
+
 
 void SystemClock_Config(void)
 {
