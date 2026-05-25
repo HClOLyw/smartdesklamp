@@ -1,64 +1,81 @@
 #include "ec11.h"
 
-/* EC11 编码器处理：
- * A/B 两相信号共同决定旋转方向；
- * 这里采用四相状态表解码，把抖动较多的边沿变化累积成完整一步。
+/* EC11 编码器处理说明：
+ * 1. PA0(A 相) 配置为 EXTI 双边沿中断，任意翻转都会进入回调。
+ * 2. 在中断里读取 A/B 当前电平，根据“当前 A 相电平 + B 相电平”的组合判断方向。
+ * 3. 中断只负责把结果累计到全局计数中，主循环仍通过 EC11_Process_10ms()
+ *    以原来的接口取出 -1/0/+1，因而 main.c 无需修改。
  */
+
+/* 由 EXTI 中断累计的编码器步数。
+ * 顺时针记为正，逆时针记为负。
+ */
+static volatile int8_t s_ec11_delta = 0;
+
 void EC11_Init(void)
 {
-  /* GPIO/EXTI are configured in MX_GPIO_Init(). */
+  /* GPIO/EXTI 由 MX_GPIO_Init() 完成初始化，这里无需额外操作。 */
 }
 
-/* 返回值说明：
- * +1：检测到一个正向完整步进
- * -1：检测到一个反向完整步进
- *  0：当前还不足以构成完整步进
+/* 保持原有接口不变：
+ * 每 10ms 由主循环调用一次，取走当前累计的一步结果。
+ * 若累计值大于 0，返回 +1；
+ * 若累计值小于 0，返回 -1；
+ * 否则返回 0。
  */
 int8_t EC11_Process_10ms(void)
 {
-  static uint8_t last_state = 0;
-  static int8_t accum = 0;
-  /* 四相编码状态转移表：
-   * 上一状态和当前状态组合成 4bit 索引，
-   * 表中给出这一次边沿变化对应的方向增量。
-   */
-  static const int8_t transition_table[16] = {
-    0, -1,  1,  0,
-    1,  0,  0, -1,
-   -1,  0,  0,  1,
-    0,  1, -1,  0
-  };
+  int8_t ret = 0;
 
-  uint8_t a = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ? 1U : 0U;
-  uint8_t b = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET) ? 1U : 0U;
-  uint8_t state = (uint8_t)((a << 1) | b);
-  uint8_t index = (uint8_t)((last_state << 2) | state);
-  int8_t step = transition_table[index];
-  last_state = state;
-
-  /* 只要检测到有效边沿，就先累计“1/4 步”。
-   * 累计到 4 或 -4 时，才输出一个完整步进。
-   */
-  if (step != 0)
+  __disable_irq();
+  if (s_ec11_delta > 0)
   {
-    accum += step;
-    if (accum >= 4)
-    {
-      accum = 0;
-      return +1;
-    }
-    if (accum <= -4)
-    {
-      accum = 0;
-      return -1;
-    }
+    s_ec11_delta--;
+    ret = +1;
   }
+  else if (s_ec11_delta < 0)
+  {
+    s_ec11_delta++;
+    ret = -1;
+  }
+  __enable_irq();
 
-  return 0;
+  return ret;
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  /* 当前版本没有在 EXTI 回调里做业务处理，保留空实现即可。 */
-  (void)GPIO_Pin;
+  if (GPIO_Pin == GPIO_PIN_0)
+  {
+    uint8_t a = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) ? 1U : 0U;
+    uint8_t b = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_1) == GPIO_PIN_SET) ? 1U : 0U;
+
+    /* 采用 A 相双边沿解码：
+     * - A 上升沿时，B=0/1 分别对应两个相反方向
+     * - A 下降沿时，B=1/0 分别对应两个相反方向
+     * 若方向与实际相反，只需把下面的 +1/-1 对调即可。
+     */
+    if (a != 0U)
+    {
+      if (b == 0U)
+      {
+        if (s_ec11_delta < 100) s_ec11_delta++;
+      }
+      else
+      {
+        if (s_ec11_delta > -100) s_ec11_delta--;
+      }
+    }
+    else
+    {
+      if (b != 0U)
+      {
+        if (s_ec11_delta < 100) s_ec11_delta++;
+      }
+      else
+      {
+        if (s_ec11_delta > -100) s_ec11_delta--;
+      }
+    }
+  }
 }

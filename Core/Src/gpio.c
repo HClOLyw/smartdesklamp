@@ -74,10 +74,11 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* PA0 同时挂到 EXTI0：
-   * 编码器 A 相下降沿可以触发中断，后续若需要可扩展更精细的边沿处理。
+   * 编码器 A 相改为双边沿触发，这样每次 A 相翻转都会进入中断，
+   * 由软件结合 B 相电平判断旋转方向。
    */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
